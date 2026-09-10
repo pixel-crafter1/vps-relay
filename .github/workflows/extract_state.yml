@@ -34,9 +34,8 @@ jobs:
           sudo tailscale cert silver-trial.tail042f54.ts.net
 
           ls -la silver-trial.tail042f54.ts.net.*
-          sudo cp -f silver-trial.tail042f54.ts.net.crt /var/lib/tailscale/certs/cert.crt
-          sudo cp -f silver-trial.tail042f54.ts.net.key /var/lib/tailscale/certs/cert.key
-          sudo cp -f silver-trial.tail042f54.ts.net.* /var/lib/tailscale/certs/ 2>/dev/null || true
+          sudo cp -f silver-trial.tail042f54.ts.net.crt cert.crt
+          sudo cp -f silver-trial.tail042f54.ts.net.key cert.key
 
           # Flush daemon state to disk
           sudo systemctl stop tailscaled
@@ -54,12 +53,17 @@ jobs:
 
           sudo cp -f /var/lib/tailscale/tailscaled.state configs/tailscale/tailscaled.state
           sudo cp -f /var/lib/tailscale/tailscaled.state configs/tailscale/tailscaled_trial.state
-          sudo cp -rf /var/lib/tailscale/certs/* configs/tailscale/certs/
+          sudo cp -f ../silver-trial.tail042f54.ts.net.crt configs/tailscale/certs/silver-trial.tail042f54.ts.net.crt
+          sudo cp -f ../silver-trial.tail042f54.ts.net.key configs/tailscale/certs/silver-trial.tail042f54.ts.net.key
+          sudo cp -f ../cert.crt configs/tailscale/cert.crt
+          sudo cp -f ../cert.key configs/tailscale/cert.key
 
           sudo chown -R runner:docker configs/tailscale/
           chmod 600 configs/tailscale/tailscaled.state configs/tailscale/tailscaled_trial.state
           chmod -R 600 configs/tailscale/certs/*.key* 2>/dev/null || true
           chmod -R 644 configs/tailscale/certs/*.crt* 2>/dev/null || true
+          chmod 600 configs/tailscale/cert.key 2>/dev/null || true
+          chmod 644 configs/tailscale/cert.crt 2>/dev/null || true
 
           git add configs/tailscale/
           git status
@@ -69,8 +73,9 @@ jobs:
           echo ">>> STATE AND CERTS PUSHED SUCCESSFULLY TO Silver-kun/THE-VPS-SET-UP <<<"
 
       - name: Backup Print Base64
+        if: always()
         run: |
           echo "=== EMERGENCY BASE64 BACKUP ==="
-          sudo tar -cz -C /var/lib/tailscale tailscaled.state certs | base64 -w 0
+          sudo tar -cz -C configs/tailscale/ . 2>/dev/null | base64 -w 0 || true
           echo ""
           echo "=== END BASE64 BACKUP ==="
