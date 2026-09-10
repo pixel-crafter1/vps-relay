@@ -1,0 +1,76 @@
+name: One-Time Extract Golden Tailscale State & Certs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo systemctl stop tailscaled 2>/dev/null || true
+          sudo rm -rf /var/lib/tailscale/*
+          sudo mkdir -p /var/lib/tailscale/certs
+
+      - name: Authenticate as silver-trial & Obtain Certs
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          sudo systemctl start tailscaled
+          sudo tailscale up \
+            --authkey="${TAILSCALE_AUTH_KEY}" \
+            --hostname="silver-trial" \
+            --accept-routes \
+            --reset
+
+          sudo tailscale set --shields-up=false
+
+          echo "Checking registered status..."
+          sudo tailscale status
+
+          echo "Requesting Let's Encrypt certificates for silver-trial.tail042f54.ts.net..."
+          sudo tailscale cert silver-trial.tail042f54.ts.net
+
+          ls -la silver-trial.tail042f54.ts.net.*
+          sudo cp -f silver-trial.tail042f54.ts.net.crt /var/lib/tailscale/certs/cert.crt
+          sudo cp -f silver-trial.tail042f54.ts.net.key /var/lib/tailscale/certs/cert.key
+          sudo cp -f silver-trial.tail042f54.ts.net.* /var/lib/tailscale/certs/ 2>/dev/null || true
+
+          # Flush daemon state to disk
+          sudo systemctl stop tailscaled
+
+      - name: Save State and Certs to Silver-kun/THE-VPS-SET-UP
+        env:
+          CLONE_PAT: ${{ secrets.CLONE_PAT }}
+        run: |
+          git config --global user.name "Silver-kun"
+          git config --global user.email "silver-kun@users.noreply.github.com"
+
+          git clone "https://${CLONE_PAT}@github.com/Silver-kun/THE-VPS-SET-UP.git" the-vps
+          cd the-vps
+          mkdir -p configs/tailscale/certs
+
+          sudo cp -f /var/lib/tailscale/tailscaled.state configs/tailscale/tailscaled.state
+          sudo cp -f /var/lib/tailscale/tailscaled.state configs/tailscale/tailscaled_trial.state
+          sudo cp -rf /var/lib/tailscale/certs/* configs/tailscale/certs/
+
+          sudo chown -R runner:docker configs/tailscale/
+          chmod 600 configs/tailscale/tailscaled.state configs/tailscale/tailscaled_trial.state
+          chmod -R 600 configs/tailscale/certs/*.key* 2>/dev/null || true
+          chmod -R 644 configs/tailscale/certs/*.crt* 2>/dev/null || true
+
+          git add configs/tailscale/
+          git status
+          git commit -m "feat(tailscale): save golden tailscaled.state and Let's Encrypt certs for silver-trial [skip ci]" || true
+          git pull --rebase -X theirs "https://${CLONE_PAT}@github.com/Silver-kun/THE-VPS-SET-UP.git" main
+          git push "https://${CLONE_PAT}@github.com/Silver-kun/THE-VPS-SET-UP.git" HEAD:main
+          echo ">>> STATE AND CERTS PUSHED SUCCESSFULLY TO Silver-kun/THE-VPS-SET-UP <<<"
+
+      - name: Backup Print Base64
+        run: |
+          echo "=== EMERGENCY BASE64 BACKUP ==="
+          sudo tar -cz -C /var/lib/tailscale tailscaled.state certs | base64 -w 0
+          echo ""
+          echo "=== END BASE64 BACKUP ==="
